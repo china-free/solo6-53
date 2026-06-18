@@ -13,6 +13,46 @@ function ensureDataDir() {
   }
 }
 
+function migrateDatabase() {
+  const columns = db.exec("PRAGMA table_info(webhooks)");
+  const colNames = columns[0] ? columns[0].values.map(c => c[1]) : [];
+  
+  if (!colNames.includes('endpoint_token')) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS webhooks_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        target_url TEXT NOT NULL,
+        endpoint_token TEXT UNIQUE NOT NULL,
+        event_types TEXT NOT NULL,
+        filter_conditions TEXT,
+        transformation_config TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    
+    const existingRows = db.all('SELECT * FROM webhooks', []);
+    if (existingRows.length > 0) {
+      const { v4: uuidv4 } = require('uuid');
+      const crypto = require('crypto');
+      for (const row of existingRows) {
+        const token = crypto.randomBytes(16).toString('hex');
+        db.run(
+          `INSERT INTO webhooks_new (id, name, target_url, endpoint_token, event_types, filter_conditions, transformation_config, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [row.id, row.name, row.target_url, token, row.event_types, row.filter_conditions, row.transformation_config, row.status, row.created_at, row.updated_at]
+        );
+      }
+    }
+    
+    db.run('DROP TABLE IF EXISTS webhooks');
+    db.run('ALTER TABLE webhooks_new RENAME TO webhooks');
+    db.run('CREATE INDEX IF NOT EXISTS idx_webhooks_endpoint_token ON webhooks(endpoint_token)');
+  }
+}
+
 async function initDatabase() {
   ensureDataDir();
   const SQL = await initSqlJs();
@@ -20,6 +60,7 @@ async function initDatabase() {
   if (fs.existsSync(DB_PATH)) {
     const buffer = fs.readFileSync(DB_PATH);
     db = new SQL.Database(buffer);
+    migrateDatabase();
   } else {
     db = new SQL.Database();
   }
@@ -29,6 +70,7 @@ async function initDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       target_url TEXT NOT NULL,
+      endpoint_token TEXT UNIQUE NOT NULL,
       event_types TEXT NOT NULL,
       filter_conditions TEXT,
       transformation_config TEXT,
@@ -58,6 +100,7 @@ async function initDatabase() {
   db.run(`CREATE INDEX IF NOT EXISTS idx_logs_webhook_id ON logs(webhook_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_webhooks_status ON webhooks(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_webhooks_endpoint_token ON webhooks(endpoint_token)`);
 
   saveDatabase();
   return db;

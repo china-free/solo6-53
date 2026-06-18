@@ -1,8 +1,13 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const db = require('../db');
 
 const router = express.Router();
+
+function generateEndpointToken() {
+  return crypto.randomBytes(16).toString('hex');
+}
 
 function parseOptionalJSON(str) {
   if (!str) return null;
@@ -13,12 +18,15 @@ function parseOptionalJSON(str) {
   }
 }
 
-function formatWebhook(row) {
+function formatWebhook(row, req) {
   if (!row) return null;
+  const baseUrl = req ? `${req.protocol}://${req.get('host')}` : '';
   return {
     id: row.id,
     name: row.name,
     target_url: row.target_url,
+    endpoint_token: row.endpoint_token,
+    receive_url: `${baseUrl}/webhook/${row.endpoint_token}`,
     event_types: parseOptionalJSON(row.event_types),
     filter_conditions: parseOptionalJSON(row.filter_conditions),
     transformation_config: parseOptionalJSON(row.transformation_config),
@@ -40,15 +48,17 @@ router.post('/', (req, res) => {
   }
 
   const id = uuidv4();
+  const endpointToken = generateEndpointToken();
   const now = Date.now();
 
   db.run(
-    `INSERT INTO webhooks (id, name, target_url, event_types, filter_conditions, transformation_config, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+    `INSERT INTO webhooks (id, name, target_url, endpoint_token, event_types, filter_conditions, transformation_config, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
     [
       id,
       name,
       target_url,
+      endpointToken,
       JSON.stringify(event_types),
       filter_conditions ? JSON.stringify(filter_conditions) : null,
       transformation_config ? JSON.stringify(transformation_config) : null,
@@ -58,7 +68,7 @@ router.post('/', (req, res) => {
   );
 
   const row = db.get('SELECT * FROM webhooks WHERE id = ?', [id]);
-  res.status(201).json(formatWebhook(row));
+  res.status(201).json(formatWebhook(row, req));
 });
 
 router.get('/', (req, res) => {
@@ -75,7 +85,7 @@ router.get('/', (req, res) => {
   params.push(parseInt(limit), parseInt(offset));
 
   const rows = db.all(query, params);
-  res.json(rows.map(formatWebhook));
+  res.json(rows.map(row => formatWebhook(row, req)));
 });
 
 router.get('/:id', (req, res) => {
@@ -83,7 +93,7 @@ router.get('/:id', (req, res) => {
   if (!row) {
     return res.status(404).json({ error: 'WebHook not found' });
   }
-  res.json(formatWebhook(row));
+  res.json(formatWebhook(row, req));
 });
 
 router.put('/:id', (req, res) => {
@@ -128,7 +138,7 @@ router.put('/:id', (req, res) => {
   db.run(`UPDATE webhooks SET ${updates.join(', ')} WHERE id = ?`, params);
 
   const row = db.get('SELECT * FROM webhooks WHERE id = ?', [req.params.id]);
-  res.json(formatWebhook(row));
+  res.json(formatWebhook(row, req));
 });
 
 router.post('/:id/status', (req, res) => {
@@ -146,7 +156,23 @@ router.post('/:id/status', (req, res) => {
   db.run('UPDATE webhooks SET status = ?, updated_at = ? WHERE id = ?', [status, Date.now(), req.params.id]);
 
   const row = db.get('SELECT * FROM webhooks WHERE id = ?', [req.params.id]);
-  res.json(formatWebhook(row));
+  res.json(formatWebhook(row, req));
+});
+
+router.post('/:id/refresh-token', (req, res) => {
+  const existing = db.get('SELECT * FROM webhooks WHERE id = ?', [req.params.id]);
+  if (!existing) {
+    return res.status(404).json({ error: 'WebHook not found' });
+  }
+
+  const newToken = generateEndpointToken();
+  db.run(
+    'UPDATE webhooks SET endpoint_token = ?, updated_at = ? WHERE id = ?',
+    [newToken, Date.now(), req.params.id]
+  );
+
+  const row = db.get('SELECT * FROM webhooks WHERE id = ?', [req.params.id]);
+  res.json(formatWebhook(row, req));
 });
 
 router.delete('/:id', (req, res) => {

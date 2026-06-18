@@ -2,7 +2,7 @@ const express = require('express');
 const { initDatabase } = require('./db');
 
 const webhooksRoutes = require('./routes/webhooks');
-const receiveRoutes = require('./routes/receive');
+const webhookReceiveRoutes = require('./routes/webhook-receive');
 const logsRoutes = require('./routes/logs');
 
 const app = express();
@@ -26,7 +26,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/webhooks', webhooksRoutes);
-app.use('/api/webhooks', receiveRoutes);
+app.use('/webhook', webhookReceiveRoutes);
 app.use('/api/logs', logsRoutes);
 
 app.use((req, res) => {
@@ -58,22 +58,22 @@ async function startServer() {
       console.log(`\n  API Endpoints:`);
       console.log(`  ─────────────────────────────────────────────────────────`);
       console.log(`  WebHook Management:`);
-      console.log(`    POST   /api/webhooks              - Create WebHook`);
-      console.log(`    GET    /api/webhooks              - List WebHooks`);
-      console.log(`    GET    /api/webhooks/:id          - Get WebHook details`);
-      console.log(`    PUT    /api/webhooks/:id          - Update WebHook`);
-      console.log(`    POST   /api/webhooks/:id/status   - Pause/Enable WebHook`);
-      console.log(`    DELETE /api/webhooks/:id          - Delete WebHook`);
+      console.log(`    POST   /api/webhooks                  - Create WebHook`);
+      console.log(`    GET    /api/webhooks                  - List WebHooks`);
+      console.log(`    GET    /api/webhooks/:id              - Get WebHook details`);
+      console.log(`    PUT    /api/webhooks/:id              - Update WebHook`);
+      console.log(`    POST   /api/webhooks/:id/status       - Pause/Enable WebHook`);
+      console.log(`    POST   /api/webhooks/:id/refresh-token - Refresh receive token`);
+      console.log(`    DELETE /api/webhooks/:id              - Delete WebHook`);
       console.log(`  ─────────────────────────────────────────────────────────`);
-      console.log(`  Receive Endpoints:`);
-      console.log(`    POST   /api/webhooks/receive       - Broadcast receive`);
-      console.log(`    POST   /api/webhooks/receive/:id   - Direct receive`);
+      console.log(`  Receive Endpoint (独立接收地址):`);
+      console.log(`    POST   /webhook/:token                - Receive and forward`);
       console.log(`  ─────────────────────────────────────────────────────────`);
       console.log(`  Logs:`);
-      console.log(`    GET    /api/logs                   - List logs`);
-      console.log(`    GET    /api/logs/stats             - Log statistics`);
-      console.log(`    GET    /api/logs/:id               - Get log details`);
-      console.log(`    DELETE /api/logs/:id               - Delete log`);
+      console.log(`    GET    /api/logs                       - List logs`);
+      console.log(`    GET    /api/logs/stats                 - Log statistics`);
+      console.log(`    GET    /api/logs/:id                   - Get log details`);
+      console.log(`    DELETE /api/logs/:id                   - Delete log`);
       console.log(`============================================================\n`);
     });
   } catch (error) {
