@@ -14,10 +14,10 @@ function ensureDataDir() {
 }
 
 function migrateDatabase() {
-  const columns = db.exec("PRAGMA table_info(webhooks)");
-  const colNames = columns[0] ? columns[0].values.map(c => c[1]) : [];
+  const webhookColumns = db.exec("PRAGMA table_info(webhooks)");
+  const webhookColNames = webhookColumns[0] ? webhookColumns[0].values.map(c => c[1]) : [];
   
-  if (!colNames.includes('endpoint_token')) {
+  if (!webhookColNames.includes('endpoint_token')) {
     db.run(`
       CREATE TABLE IF NOT EXISTS webhooks_new (
         id TEXT PRIMARY KEY,
@@ -35,7 +35,6 @@ function migrateDatabase() {
     
     const existingRows = db.all('SELECT * FROM webhooks', []);
     if (existingRows.length > 0) {
-      const { v4: uuidv4 } = require('uuid');
       const crypto = require('crypto');
       for (const row of existingRows) {
         const token = crypto.randomBytes(16).toString('hex');
@@ -50,6 +49,41 @@ function migrateDatabase() {
     db.run('DROP TABLE IF EXISTS webhooks');
     db.run('ALTER TABLE webhooks_new RENAME TO webhooks');
     db.run('CREATE INDEX IF NOT EXISTS idx_webhooks_endpoint_token ON webhooks(endpoint_token)');
+  }
+
+  const logColumns = db.exec("PRAGMA table_info(logs)");
+  const logColNames = logColumns[0] ? logColumns[0].values.map(c => c[1]) : [];
+  
+  if (!logColNames.includes('attempt_details')) {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS logs_new (
+        id TEXT PRIMARY KEY,
+        webhook_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        original_request TEXT NOT NULL,
+        transformed_request TEXT,
+        target_response TEXT,
+        attempt_details TEXT,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (webhook_id) REFERENCES webhooks(id)
+      )
+    `);
+    
+    const existingLogs = db.all('SELECT * FROM logs', []);
+    for (const row of existingLogs) {
+      db.run(
+        `INSERT INTO logs_new (id, webhook_id, event_type, original_request, transformed_request, target_response, status, attempts, duration_ms, error_message, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [row.id, row.webhook_id, row.event_type, row.original_request, row.transformed_request, row.target_response, row.status, row.attempts, row.duration_ms, row.error_message, row.created_at]
+      );
+    }
+    
+    db.run('DROP TABLE IF EXISTS logs');
+    db.run('ALTER TABLE logs_new RENAME TO logs');
   }
 }
 
@@ -88,6 +122,7 @@ async function initDatabase() {
       original_request TEXT NOT NULL,
       transformed_request TEXT,
       target_response TEXT,
+      attempt_details TEXT,
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
       duration_ms INTEGER NOT NULL DEFAULT 0,

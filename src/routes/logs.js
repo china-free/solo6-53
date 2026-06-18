@@ -14,6 +14,18 @@ function parseOptionalJSON(str) {
 
 function formatLog(row) {
   if (!row) return null;
+  const attemptDetails = parseOptionalJSON(row.attempt_details);
+  let summary = null;
+  if (attemptDetails && attemptDetails.length > 0) {
+    const firstSuccess = attemptDetails.find(a => a.success);
+    if (attemptDetails.length === 1 && attemptDetails[0].success) {
+      summary = '一次成功';
+    } else if (firstSuccess) {
+      summary = `第${firstSuccess.attempt_number}次成功（前${firstSuccess.attempt_number - 1}次失败）`;
+    } else {
+      summary = `${attemptDetails.length}次全部失败`;
+    }
+  }
   return {
     id: row.id,
     webhook_id: row.webhook_id,
@@ -21,6 +33,8 @@ function formatLog(row) {
     original_request: parseOptionalJSON(row.original_request),
     transformed_request: parseOptionalJSON(row.transformed_request),
     target_response: parseOptionalJSON(row.target_response),
+    attempt_summary: summary,
+    attempt_details: attemptDetails,
     status: row.status,
     attempts: row.attempts,
     duration_ms: row.duration_ms,

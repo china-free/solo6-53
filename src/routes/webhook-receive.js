@@ -66,13 +66,31 @@ async function handleWebhookRequest(webhook, req, res) {
 
   try {
     const result = await forwardWebhook(webhook, eventType, req.body, req.headers);
+    let summary = null;
+    if (result.attempt_details && result.attempt_details.length > 0) {
+      const firstSuccess = result.attempt_details.find(a => a.success);
+      if (result.attempt_details.length === 1 && result.attempt_details[0].success) {
+        summary = '一次成功';
+      } else if (firstSuccess) {
+        summary = `第${firstSuccess.attempt_number}次成功（前${firstSuccess.attempt_number - 1}次失败）`;
+      } else {
+        summary = `${result.attempt_details.length}次全部失败`;
+      }
+    }
     const response = {
       webhook_id: webhook.id,
       webhook_name: webhook.name,
       receive_url: `${req.protocol}://${req.get('host')}/webhook/${webhook.endpoint_token}`,
       target_url: webhook.target_url,
       forwarded: true,
-      ...result
+      log_id: result.log_id,
+      success: result.success,
+      attempts: result.attempts,
+      attempt_summary: summary,
+      attempt_details: result.attempt_details,
+      duration_ms: result.duration_ms,
+      error: result.error,
+      response: result.response
     };
     res.status(result.success ? 200 : 500).json(response);
   } catch (err) {
